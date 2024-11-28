@@ -52,7 +52,6 @@ func ParseReceiptHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Simulated text extraction from Google Vision API (replace with actual call)
 	extractedText, err := callGoogleVisionAPI(base64Image)
 	if err != nil {
 		http.Error(w, "Error parsing b64 data", http.StatusBadRequest)

@@ -29,9 +29,9 @@ func main() {
 	r.Handle("/receipts", auth.JWTMiddleware(http.HandlerFunc(handlers.GetAllReceiptsHandler))).Methods("GET")
 	r.Handle("/receipts/{id}", http.HandlerFunc(handlers.GetReceiptByIDHandler)).Methods("GET")
 
-	// Add CORS middleware
+	// CORS middleware
 	corsHandler := cors.New(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:5173"}, // Replace with your frontend's origin
+		AllowedOrigins:   []string{"http://localhost:5173"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Authorization", "Content-Type"},
 		AllowCredentials: true,
