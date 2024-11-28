@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"os"
 
 	"receipt-splitter-backend/auth"
 	"receipt-splitter-backend/db"
@@ -14,6 +15,7 @@ import (
 
 func main() {
 	db.InitDB()
+	handlers.InitOpenAIClient(os.Getenv("OPENAPI_API_KEY"))
 
 	r := mux.NewRouter()
 
