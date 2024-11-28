@@ -9,6 +9,7 @@ import (
 	"receipt-splitter-backend/handlers"
 
 	"github.com/gorilla/mux"
+	"github.com/rs/cors"
 )
 
 func main() {
@@ -26,6 +27,14 @@ func main() {
 	r.Handle("/receipts", auth.JWTMiddleware(http.HandlerFunc(handlers.GetAllReceiptsHandler))).Methods("GET")
 	r.Handle("/receipts/{id}", http.HandlerFunc(handlers.GetReceiptByIDHandler)).Methods("GET")
 
+	// Add CORS middleware
+	corsHandler := cors.New(cors.Options{
+		AllowedOrigins:   []string{"http://localhost:5173"}, // Replace with your frontend's origin
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Authorization", "Content-Type"},
+		AllowCredentials: true,
+	}).Handler(r)
+
 	log.Println("Server running on port 8080")
-	log.Fatal(http.ListenAndServe(":8080", r))
+	log.Fatal(http.ListenAndServe(":8080", corsHandler))
 }

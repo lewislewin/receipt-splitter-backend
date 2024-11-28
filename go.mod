@@ -8,6 +8,8 @@ require (
 	golang.org/x/crypto v0.29.0
 )
 
+require github.com/rs/cors v1.11.1 // indirect
+
 require (
 	github.com/golang-jwt/jwt/v4 v4.5.1 // indirect
 	github.com/google/uuid v1.6.0
