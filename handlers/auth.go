@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -15,7 +16,7 @@ type User struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	Email     string    `json:"email"`
-	Password  string    `json:"-"`
+	Password  string    `json:"password"`
 	MonzoID   string    `json:"monzo_id"`
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -23,8 +24,16 @@ type User struct {
 // RegisterHandler handles user registration
 func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	var user User
+
+	// Decode the request body
 	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
 		http.Error(w, "Invalid input", http.StatusBadRequest)
+		return
+	}
+
+	// Validate input fields
+	if user.Name == "" || user.Email == "" || user.Password == "" {
+		http.Error(w, "Name, email, and password are required", http.StatusBadRequest)
 		return
 	}
 
@@ -36,24 +45,31 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	user.Password = string(hashedPassword)
 
-	// Insert user into the database
+	// Debug: Log the generated hash
+	fmt.Println("Generated bcrypt hash:", user.Password)
+
+	// Insert the user into the database
 	query := `INSERT INTO users (name, email, password, monzo_id) VALUES ($1, $2, $3, $4) RETURNING id, created_at`
 	err = db.DB.QueryRow(query, user.Name, user.Email, user.Password, user.MonzoID).Scan(&user.ID, &user.CreatedAt)
 	if err != nil {
+		// Handle duplicate email or monzo_id errors
 		if err.Error() == "pq: duplicate key value violates unique constraint" {
 			http.Error(w, "Email already exists", http.StatusConflict)
 			return
 		}
 		http.Error(w, "Failed to create user", http.StatusInternalServerError)
+		fmt.Println("Database error:", err) // Debugging log
 		return
 	}
 
-	user.Password = "" // Omit the password from the response
+	// Omit the password from the response
+	user.Password = ""
+
+	// Return the created user
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(user)
 }
 
-// LoginHandler handles user login
 func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	var credentials struct {
 		Email    string `json:"email"`
@@ -65,9 +81,20 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate input
+	if credentials.Email == "" || credentials.Password == "" {
+		http.Error(w, "Email and password are required", http.StatusBadRequest)
+		return
+	}
+
+	// Debug: Log credentials
+	fmt.Println("Received credentials:", credentials)
+
+	// Fetch user from the database
 	var user User
 	query := `SELECT id, name, email, password, monzo_id, created_at FROM users WHERE email = $1`
 	err := db.DB.QueryRow(query, credentials.Email).Scan(&user.ID, &user.Name, &user.Email, &user.Password, &user.MonzoID, &user.CreatedAt)
+
 	if err == sql.ErrNoRows {
 		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
 		return
@@ -76,13 +103,23 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Debug: Log retrieved user
+	fmt.Println("Retrieved user from DB:", user)
+
 	// Verify the password
+	fmt.Println("Comparing provided password:", credentials.Password)
+	fmt.Println("With stored hash:", user.Password)
+
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(credentials.Password)); err != nil {
+		fmt.Println("Password comparison failed:", err)
 		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
 		return
 	}
 
-	user.Password = "" // Omit the password from the response
+	// Omit password from the response
+	user.Password = ""
+
+	// Return successful login
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(user)
 }
