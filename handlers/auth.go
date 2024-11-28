@@ -12,7 +12,7 @@ import (
 )
 
 type User struct {
-	ID        int       `json:"id"`
+	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	Email     string    `json:"email"`
 	Password  string    `json:"-"`
@@ -41,7 +41,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	err = db.DB.QueryRow(query, user.Name, user.Email, user.Password, user.MonzoID).Scan(&user.ID, &user.CreatedAt)
 	if err != nil {
 		if err.Error() == "pq: duplicate key value violates unique constraint" {
-			http.Error(w, "Email or Monzo ID already exists", http.StatusConflict)
+			http.Error(w, "Email already exists", http.StatusConflict)
 			return
 		}
 		http.Error(w, "Failed to create user", http.StatusInternalServerError)
