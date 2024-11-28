@@ -16,14 +16,21 @@ type User struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	Email     string    `json:"email"`
-	Password  string    `json:"password"`
+	Password  string    `json:"-"` // Omit from responses
 	MonzoID   string    `json:"monzo_id"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type RegisterInput struct {
+	Name     string `json:"name"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
+	MonzoID  string `json:"monzo_id"`
+}
+
 // RegisterHandler handles user registration
 func RegisterHandler(w http.ResponseWriter, r *http.Request) {
-	var user User
+	var user RegisterInput
 
 	// Decode the request body
 	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
@@ -44,9 +51,6 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user.Password = string(hashedPassword)
-
-	// Debug: Log the generated hash
-	fmt.Println("Generated bcrypt hash:", user.Password)
 
 	// Insert the user into the database
 	query := `INSERT INTO users (name, email, password, monzo_id) VALUES ($1, $2, $3, $4) RETURNING id, created_at`
@@ -87,9 +91,6 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Debug: Log credentials
-	fmt.Println("Received credentials:", credentials)
-
 	// Fetch user from the database
 	var user User
 	query := `SELECT id, name, email, password, monzo_id, created_at FROM users WHERE email = $1`
@@ -105,10 +106,6 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Debug: Log retrieved user
 	fmt.Println("Retrieved user from DB:", user)
-
-	// Verify the password
-	fmt.Println("Comparing provided password:", credentials.Password)
-	fmt.Println("With stored hash:", user.Password)
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(credentials.Password)); err != nil {
 		fmt.Println("Password comparison failed:", err)
