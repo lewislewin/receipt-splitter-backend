@@ -3,10 +3,10 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"time"
 
+	"receipt-splitter-backend/auth"
 	"receipt-splitter-backend/db"
 
 	"golang.org/x/crypto/bcrypt"
@@ -85,6 +85,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		Password string `json:"password"`
 	}
 
+	// Decode request
 	if err := json.NewDecoder(r.Body).Decode(&credentials); err != nil {
 		http.Error(w, "Invalid input", http.StatusBadRequest)
 		return
@@ -109,19 +110,26 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Debug: Log retrieved user
-	fmt.Println("Retrieved user from DB:", user)
-
+	// Verify password
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(credentials.Password)); err != nil {
-		fmt.Println("Password comparison failed:", err)
 		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
+		return
+	}
+
+	// Generate JWT
+	token, err := auth.GenerateJWT(user.ID)
+	if err != nil {
+		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
 		return
 	}
 
 	// Omit password from the response
 	user.Password = ""
 
-	// Return successful login
+	// Respond with user info and token
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(user)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"user":  user,
+		"token": token,
+	})
 }

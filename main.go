@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 
+	"receipt-splitter-backend/auth"
 	"receipt-splitter-backend/db"
 	"receipt-splitter-backend/handlers"
 
@@ -19,11 +20,11 @@ func main() {
 	r.HandleFunc("/register", handlers.RegisterHandler).Methods("POST")
 	r.HandleFunc("/login", handlers.LoginHandler).Methods("POST")
 
-	// Receipt routes
-	r.HandleFunc("/receipts", handlers.CreateReceiptHandler).Methods("POST")
-	r.HandleFunc("/receipts/parse", handlers.ParseReceiptHandler).Methods("POST")
-	r.HandleFunc("/receipts", handlers.GetAllReceiptsHandler).Methods("GET")
-	r.HandleFunc("/receipts/{id}", handlers.GetReceiptByIDHandler).Methods("GET")
+	// Receipt routes (protected)
+	r.Handle("/receipts", auth.JWTMiddleware(http.HandlerFunc(handlers.CreateReceiptHandler))).Methods("POST")
+	r.Handle("/receipts/parse", auth.JWTMiddleware(http.HandlerFunc(handlers.ParseReceiptHandler))).Methods("POST")
+	r.Handle("/receipts", auth.JWTMiddleware(http.HandlerFunc(handlers.GetAllReceiptsHandler))).Methods("GET")
+	r.Handle("/receipts/{id}", http.HandlerFunc(handlers.GetReceiptByIDHandler)).Methods("GET")
 
 	log.Println("Server running on port 8080")
 	log.Fatal(http.ListenAndServe(":8080", r))

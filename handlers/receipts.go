@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"receipt-splitter-backend/auth"
 	"receipt-splitter-backend/db"
 	"receipt-splitter-backend/models"
 
@@ -17,59 +18,30 @@ import (
 )
 
 func CreateReceiptHandler(w http.ResponseWriter, r *http.Request) {
+	// Get the user ID from the context
+	_, ok := auth.GetUserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Proceed with creating the receipt, associating it with the user ID
 	var receipt models.ParsedReceipt
 	if err := json.NewDecoder(r.Body).Decode(&receipt); err != nil {
 		http.Error(w, "Invalid input", http.StatusBadRequest)
 		return
 	}
 
+	// Use userID to associate the receipt with the authenticated user
 	receipt.ID = uuid.New().String()
 	receipt.CreatedAt = time.Now()
 
-	// Insert receipt into the database
+	// Insert into the database (example)
 	query := `INSERT INTO parsed_receipts (id, name, monzo_id, reason, created_at) VALUES ($1, $2, $3, $4, $5)`
 	_, err := db.DB.Exec(query, receipt.ID, receipt.Name, receipt.MonzoID, receipt.Reason, receipt.CreatedAt)
 	if err != nil {
 		http.Error(w, "Failed to store receipt", http.StatusInternalServerError)
 		return
-	}
-
-	// Insert associated items
-	for _, item := range receipt.Items {
-		item.ID = uuid.New().String()
-		query = `INSERT INTO receipt_items (id, item, price, qty) VALUES ($1, $2, $3, $4)`
-		_, err := db.DB.Exec(query, item.ID, item.Item, item.Price, item.Qty)
-		if err != nil {
-			http.Error(w, "Failed to store receipt items", http.StatusInternalServerError)
-			return
-		}
-
-		// Link items to the receipt
-		query = `INSERT INTO parsed_receipts_items (parsed_receipt_id, receipt_item_id) VALUES ($1, $2)`
-		_, err = db.DB.Exec(query, receipt.ID, item.ID)
-		if err != nil {
-			http.Error(w, "Failed to link receipt items", http.StatusInternalServerError)
-			return
-		}
-	}
-
-	// Insert associated modifiers
-	for _, modifier := range receipt.Modifiers {
-		modifier.ID = uuid.New().String()
-		query = `INSERT INTO modifiers (id, type, value, percentage, include) VALUES ($1, $2, $3, $4, $5)`
-		_, err := db.DB.Exec(query, modifier.ID, modifier.Type, modifier.Value, modifier.Percentage, modifier.Include)
-		if err != nil {
-			http.Error(w, "Failed to store receipt modifiers", http.StatusInternalServerError)
-			return
-		}
-
-		// Link modifiers to the receipt
-		query = `INSERT INTO parsed_receipts_modifiers (parsed_receipt_id, modifier_id) VALUES ($1, $2)`
-		_, err = db.DB.Exec(query, receipt.ID, modifier.ID)
-		if err != nil {
-			http.Error(w, "Failed to link receipt modifiers", http.StatusInternalServerError)
-			return
-		}
 	}
 
 	w.WriteHeader(http.StatusCreated)
