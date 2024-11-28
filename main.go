@@ -4,11 +4,15 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/gorilla/mux"
+	"receipt-splitter-backend/db"
 	"receipt-splitter-backend/handlers"
+
+	"github.com/gorilla/mux"
 )
 
 func main() {
+	db.InitDB()
+
 	r := mux.NewRouter()
 
 	// Auth routes
