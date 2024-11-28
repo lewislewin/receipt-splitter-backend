@@ -30,39 +30,44 @@ type RegisterInput struct {
 
 // RegisterHandler handles user registration
 func RegisterHandler(w http.ResponseWriter, r *http.Request) {
-	var user RegisterInput
+	var input RegisterInput
 
 	// Decode the request body
-	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, "Invalid input", http.StatusBadRequest)
 		return
 	}
 
 	// Validate input fields
-	if user.Name == "" || user.Email == "" || user.Password == "" {
+	if input.Name == "" || input.Email == "" || input.Password == "" {
 		http.Error(w, "Name, email, and password are required", http.StatusBadRequest)
 		return
 	}
 
 	// Hash the password
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
 	if err != nil {
 		http.Error(w, "Error hashing password", http.StatusInternalServerError)
 		return
 	}
-	user.Password = string(hashedPassword)
+
+	// Create the user struct
+	user := User{
+		Name:     input.Name,
+		Email:    input.Email,
+		Password: string(hashedPassword), // Store the hash
+		MonzoID:  input.MonzoID,
+	}
 
 	// Insert the user into the database
 	query := `INSERT INTO users (name, email, password, monzo_id) VALUES ($1, $2, $3, $4) RETURNING id, created_at`
 	err = db.DB.QueryRow(query, user.Name, user.Email, user.Password, user.MonzoID).Scan(&user.ID, &user.CreatedAt)
 	if err != nil {
-		// Handle duplicate email or monzo_id errors
 		if err.Error() == "pq: duplicate key value violates unique constraint" {
 			http.Error(w, "Email already exists", http.StatusConflict)
 			return
 		}
 		http.Error(w, "Failed to create user", http.StatusInternalServerError)
-		fmt.Println("Database error:", err) // Debugging log
 		return
 	}
 
