@@ -36,6 +36,6 @@ func main() {
 		AllowedHeaders: []string{"Authorization", "Content-Type"},
 	}).Handler(r)
 
-	log.Println("Server running on port 8080")
-	log.Fatal(http.ListenAndServe(":8080", corsHandler))
+	log.Println("Server running on port 8000")
+	log.Fatal(http.ListenAndServe(":8000", corsHandler))
 }
