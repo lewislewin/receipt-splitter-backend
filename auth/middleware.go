@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"receipt-splitter-backend/helpers"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v4"
@@ -17,25 +18,22 @@ func JWTMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
-			http.Error(w, "Authorization header missing", http.StatusUnauthorized)
+			helpers.JSONErrorResponse(w, http.StatusUnauthorized, "Authorization header missing")
 			return
 		}
 
-		// Extract the token from the header
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 		if tokenString == authHeader {
-			http.Error(w, "Invalid Authorization header format", http.StatusUnauthorized)
+			helpers.JSONErrorResponse(w, http.StatusUnauthorized, "Invalid Authorization header format")
 			return
 		}
 
-		// Get JWT secret dynamically
 		secret := os.Getenv("JWT_SECRET")
 		if secret == "" {
-			http.Error(w, "Server misconfigured: JWT secret missing", http.StatusInternalServerError)
+			helpers.JSONErrorResponse(w, http.StatusInternalServerError, "Server misconfigured: JWT secret missing")
 			return
 		}
 
-		// Parse and validate the token
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 				return nil, http.ErrUseLastResponse
@@ -43,23 +41,22 @@ func JWTMiddleware(next http.Handler) http.Handler {
 			return []byte(secret), nil
 		})
 		if err != nil || !token.Valid {
-			http.Error(w, "Invalid token", http.StatusUnauthorized)
+			helpers.JSONErrorResponse(w, http.StatusUnauthorized, "Invalid token")
 			return
 		}
 
-		// Extract user ID from the token claims
 		claims, ok := token.Claims.(jwt.MapClaims)
 		if !ok {
-			http.Error(w, "Invalid token claims", http.StatusUnauthorized)
-			return
-		}
-		userID, ok := claims["user_id"].(string)
-		if !ok {
-			http.Error(w, "Invalid token payload", http.StatusUnauthorized)
+			helpers.JSONErrorResponse(w, http.StatusUnauthorized, "Invalid token claims")
 			return
 		}
 
-		// Add the user ID to the request context
+		userID, ok := claims["user_id"].(string)
+		if !ok {
+			helpers.JSONErrorResponse(w, http.StatusUnauthorized, "Invalid token payload")
+			return
+		}
+
 		ctx := context.WithValue(r.Context(), UserIDKey{}, userID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

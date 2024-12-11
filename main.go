@@ -24,6 +24,10 @@ func main() {
 	r.HandleFunc("/register", handlers.RegisterHandler).Methods("POST")
 	r.HandleFunc("/login", handlers.LoginHandler).Methods("POST")
 
+	// Auth routes
+	r.HandleFunc("/health", handlers.HealthCheckHandler).Methods("GET")
+	r.Handle("/health-auth", auth.JWTMiddleware(http.HandlerFunc(handlers.HealthCheckAuthHandler))).Methods("GET")
+
 	// Receipt routes (protected)
 	r.Handle("/receipts", auth.JWTMiddleware(http.HandlerFunc(handlers.CreateReceiptHandler))).Methods("POST")
 	r.Handle("/receipts/parse", auth.JWTMiddleware(http.HandlerFunc(handlers.ParseReceiptHandler))).Methods("POST")
@@ -39,6 +43,6 @@ func main() {
 
 	host := os.Getenv("APP_PORT")
 
-	log.Println(fmt.Sprintf("Server running on port %s", host))
+	log.Printf("Server running on port %s", host)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%s", host), corsHandler))
 }
