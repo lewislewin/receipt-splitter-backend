@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -36,6 +37,8 @@ func main() {
 		AllowedHeaders: []string{"Authorization", "Content-Type"},
 	}).Handler(r)
 
-	log.Println("Server running on port 8000")
-	log.Fatal(http.ListenAndServe(":8080", corsHandler))
+	host := os.Getenv("APP_PORT")
+
+	log.Println(fmt.Sprintf("Server running on port %s", host))
+	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%s", host), corsHandler))
 }
