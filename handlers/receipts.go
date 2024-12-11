@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -11,15 +10,15 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"time"
 
 	"receipt-splitter-backend/auth"
 	"receipt-splitter-backend/db"
 	"receipt-splitter-backend/helpers"
+	"receipt-splitter-backend/models"
 
-	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	openai "github.com/sashabaranov/go-openai"
+	"gorm.io/gorm"
 )
 
 var openaiClient *openai.Client
@@ -210,40 +209,46 @@ func CreateReceiptHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Decode request body into a generic receipt object
-	var receipt map[string]interface{}
-	if err := json.NewDecoder(r.Body).Decode(&receipt); err != nil {
+	// Decode request body into a receipt object
+	var receiptInput struct {
+		Name      string               `json:"name"`
+		Reason    string               `json:"reason"`
+		MonzoID   string               `json:"monzo_id"`
+		Items     []models.ReceiptItem `json:"items"`
+		Modifiers []models.Modifier    `json:"modifiers"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&receiptInput); err != nil {
 		helpers.JSONErrorResponse(w, http.StatusBadRequest, "Invalid input")
 		return
 	}
 
-	// Generate a new receipt ID and add a created_at timestamp
-	receiptID := uuid.New().String()
-	createdAt := time.Now()
-
-	// Store the receipt in the database
-	query := `INSERT INTO receipts (id, user_id, receipt_data, created_at) VALUES ($1, $2, $3, $4)`
-	receiptJSON, err := json.Marshal(receipt)
-	if err != nil {
-		helpers.JSONErrorResponse(w, http.StatusInternalServerError, "Failed to serialize receipt")
-		return
+	// Create a new receipt
+	receipt := models.Receipt{
+		UserID:    userID,
+		Name:      receiptInput.Name,
+		Reason:    receiptInput.Reason,
+		MonzoID:   receiptInput.MonzoID,
+		Items:     receiptInput.Items,
+		Modifiers: receiptInput.Modifiers,
 	}
 
-	_, err = db.DB.Exec(query, receiptID, userID, receiptJSON, createdAt)
-	if err != nil {
+	// Save the receipt to the database
+	if err := db.DB.Create(&receipt).Error; err != nil {
 		helpers.JSONErrorResponse(w, http.StatusInternalServerError, "Failed to store receipt")
 		return
 	}
 
-	// Prepare the response
-	response := map[string]interface{}{
-		"id":         receiptID,
-		"user_id":    userID,
-		"receipt":    receipt,
-		"created_at": createdAt,
-	}
-
-	helpers.JSONResponse(w, http.StatusCreated, response)
+	// Respond with the created receipt
+	helpers.JSONResponse(w, http.StatusCreated, map[string]interface{}{
+		"id":         receipt.ID,
+		"user_id":    receipt.UserID,
+		"name":       receipt.Name,
+		"reason":     receipt.Reason,
+		"monzo_id":   receipt.MonzoID,
+		"items":      receipt.Items,
+		"modifiers":  receipt.Modifiers,
+		"created_at": receipt.CreatedAt,
+	})
 }
 
 func GetAllReceiptsHandler(w http.ResponseWriter, r *http.Request) {
@@ -254,73 +259,59 @@ func GetAllReceiptsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Query all receipts for the user
-	rows, err := db.DB.Query(`SELECT id, receipt_data, created_at FROM receipts WHERE user_id = $1`, userID)
-	if err != nil {
+	// Fetch all receipts for the user with associated items and modifiers
+	var receipts []models.Receipt
+	if err := db.DB.Preload("Items").Preload("Modifiers").Where("user_id = ?", userID).Find(&receipts).Error; err != nil {
 		helpers.JSONErrorResponse(w, http.StatusInternalServerError, "Failed to fetch receipts")
 		return
 	}
-	defer rows.Close()
 
-	var receipts []map[string]interface{}
-	for rows.Next() {
-		var id string
-		var receiptData []byte
-		var createdAt time.Time
-
-		err := rows.Scan(&id, &receiptData, &createdAt)
-		if err != nil {
-			helpers.JSONErrorResponse(w, http.StatusInternalServerError, "Failed to parse receipt data")
-			return
-		}
-
-		// Decode the receipt_data JSON
-		var receipt map[string]interface{}
-		err = json.Unmarshal(receiptData, &receipt)
-		if err != nil {
-			helpers.JSONErrorResponse(w, http.StatusInternalServerError, "Failed to decode receipt JSON")
-			return
-		}
-
-		// Add metadata to the receipt
-		receipt["id"] = id
-		receipt["created_at"] = createdAt
-
-		receipts = append(receipts, receipt)
+	// Format receipts for the response
+	var formattedReceipts []map[string]interface{}
+	for _, receipt := range receipts {
+		formattedReceipts = append(formattedReceipts, map[string]interface{}{
+			"id":         receipt.ID,
+			"user_id":    receipt.UserID,
+			"name":       receipt.Name,
+			"reason":     receipt.Reason,
+			"monzo_id":   receipt.MonzoID,
+			"items":      receipt.Items,
+			"modifiers":  receipt.Modifiers,
+			"created_at": receipt.CreatedAt,
+		})
 	}
 
-	helpers.JSONResponse(w, http.StatusOK, receipts)
+	// Respond with the list of receipts
+	helpers.JSONResponse(w, http.StatusOK, formattedReceipts)
 }
 
 func GetReceiptByIDHandler(w http.ResponseWriter, r *http.Request) {
 	// Get the receipt ID from the URL
 	id := mux.Vars(r)["id"]
 
-	// Query the receipt from the database
-	var receiptData []byte
-	var createdAt time.Time
-	query := `SELECT receipt_data, created_at FROM receipts WHERE id = $1`
-	err := db.DB.QueryRow(query, id).Scan(&receiptData, &createdAt)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+	// Fetch the receipt, including associated items and modifiers
+	var receipt models.Receipt
+	if err := db.DB.Preload("Items").Preload("Modifiers").First(&receipt, "id = ?", id).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
 			helpers.JSONErrorResponse(w, http.StatusNotFound, "Receipt not found")
-		} else {
-			helpers.JSONErrorResponse(w, http.StatusInternalServerError, "Failed to retrieve receipt")
+			return
 		}
+		helpers.JSONErrorResponse(w, http.StatusInternalServerError, "Failed to retrieve receipt")
 		return
 	}
 
-	// Decode the receipt_data JSON
-	var receipt map[string]interface{}
-	err = json.Unmarshal(receiptData, &receipt)
-	if err != nil {
-		helpers.JSONErrorResponse(w, http.StatusInternalServerError, "Failed to decode receipt JSON")
-		return
+	// Construct the receipt data manually
+	receiptData := map[string]interface{}{
+		"id":         receipt.ID,
+		"user_id":    receipt.UserID,
+		"name":       receipt.Name,
+		"reason":     receipt.Reason,
+		"monzo_id":   receipt.MonzoID,
+		"items":      receipt.Items,
+		"modifiers":  receipt.Modifiers,
+		"created_at": receipt.CreatedAt,
 	}
 
-	// Add metadata to the receipt
-	receipt["id"] = id
-	receipt["created_at"] = createdAt
-
-	helpers.JSONResponse(w, http.StatusOK, receipt)
+	// Respond with the receipt
+	helpers.JSONResponse(w, http.StatusOK, receiptData)
 }

@@ -1,12 +1,11 @@
 package handlers
 
 import (
-	"database/sql"
 	"net/http"
 	"receipt-splitter-backend/auth"
 	"receipt-splitter-backend/db"
 	"receipt-splitter-backend/helpers"
-	"time"
+	"receipt-splitter-backend/models"
 )
 
 // GetCurrentUser retrieves and returns the currently authenticated user
@@ -19,21 +18,10 @@ func GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Query the user from the database
-	var user struct {
-		ID        string    `json:"id"`
-		Name      string    `json:"name"`
-		Email     string    `json:"email"`
-		MonzoID   string    `json:"monzo_id"`
-		CreatedAt time.Time `json:"created_at"`
-	}
-	query := `SELECT id, name, email, monzo_id, created_at FROM users WHERE id = $1`
-	err := db.DB.QueryRow(query, userID).Scan(&user.ID, &user.Name, &user.Email, &user.MonzoID, &user.CreatedAt)
+	var user models.User
+	err := db.DB.Where("id = ?", userID).First(&user).Error
 	if err != nil {
-		if err == sql.ErrNoRows {
-			helpers.JSONErrorResponse(w, http.StatusNotFound, "User not found")
-		} else {
-			helpers.JSONErrorResponse(w, http.StatusInternalServerError, "Failed to retrieve user")
-		}
+		helpers.JSONErrorResponse(w, http.StatusInternalServerError, "Failed to query user")
 		return
 	}
 

@@ -1,27 +1,18 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
 	"net/http"
-	"time"
-
 	"receipt-splitter-backend/auth"
 	"receipt-splitter-backend/db"
 	"receipt-splitter-backend/helpers"
+	"receipt-splitter-backend/models"
 
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
-type User struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Email     string    `json:"email"`
-	Password  string    `json:"-"` // Omit from responses
-	MonzoID   string    `json:"monzo_id"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
+// RegisterInput represents the input for the RegisterHandler
 type RegisterInput struct {
 	Name     string `json:"name"`
 	Email    string `json:"email"`
@@ -53,18 +44,17 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create the user struct
-	user := User{
+	user := models.User{
 		Name:     input.Name,
 		Email:    input.Email,
 		Password: string(hashedPassword), // Store the hash
 		MonzoID:  input.MonzoID,
 	}
 
-	// Insert the user into the database
-	query := `INSERT INTO users (name, email, password, monzo_id) VALUES ($1, $2, $3, $4) RETURNING id, created_at`
-	err = db.DB.QueryRow(query, user.Name, user.Email, user.Password, user.MonzoID).Scan(&user.ID, &user.CreatedAt)
+	// Insert the user into the database using GORM
+	err = db.DB.Create(&user).Error
 	if err != nil {
-		if err.Error() == "pq: duplicate key value violates unique constraint" {
+		if gorm.ErrDuplicatedKey == err {
 			helpers.JSONErrorResponse(w, http.StatusConflict, "Email already exists")
 			return
 		}
@@ -98,15 +88,14 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch user from the database
-	var user User
-	query := `SELECT id, name, email, password, monzo_id, created_at FROM users WHERE email = $1`
-	err := db.DB.QueryRow(query, credentials.Email).Scan(&user.ID, &user.Name, &user.Email, &user.Password, &user.MonzoID, &user.CreatedAt)
-
-	if err == sql.ErrNoRows {
-		helpers.JSONErrorResponse(w, http.StatusUnauthorized, "Invalid email or password")
-		return
-	} else if err != nil {
+	// Fetch user from the database using GORM
+	var user models.User
+	err := db.DB.Where("email = ?", credentials.Email).First(&user).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			helpers.JSONErrorResponse(w, http.StatusUnauthorized, "Invalid email or password")
+			return
+		}
 		helpers.JSONErrorResponse(w, http.StatusInternalServerError, "Failed to query user")
 		return
 	}
