@@ -15,6 +15,7 @@ import (
 
 	"receipt-splitter-backend/auth"
 	"receipt-splitter-backend/db"
+	"receipt-splitter-backend/helpers"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
@@ -26,47 +27,6 @@ var openaiClient *openai.Client
 // Initialize OpenAI client
 func InitOpenAIClient(apiKey string) {
 	openaiClient = openai.NewClient(apiKey)
-}
-
-// ParseReceiptHandler processes and parses receipts
-func ParseReceiptHandler(w http.ResponseWriter, r *http.Request) {
-	type ParseRequest struct {
-		Receipt string `json:"receipt"`
-	}
-
-	var req ParseRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid input", http.StatusBadRequest)
-		return
-	}
-
-	base64Image := req.Receipt
-	if strings.HasPrefix(base64Image, "data:image") {
-		base64Image = strings.Split(base64Image, ",")[1]
-	}
-
-	// Decode Base64 image
-	_, err := base64.StdEncoding.DecodeString(base64Image)
-	if err != nil {
-		http.Error(w, "Invalid Base64 image data", http.StatusBadRequest)
-		return
-	}
-
-	extractedText, err := callGoogleVisionAPI(base64Image)
-	if err != nil {
-		http.Error(w, "Error parsing b64 data", http.StatusBadRequest)
-		return
-	}
-
-	// Call OpenAI for parsing
-	structuredData, err := callOpenAIForParsing(extractedText)
-	if err != nil {
-		http.Error(w, "Failed to parse receipt with OpenAI API: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(structuredData)
 }
 
 // Call OpenAI to parse extracted text into structured JSON
@@ -200,18 +160,60 @@ func callGoogleVisionAPI(base64Image string) (string, error) {
 	return fullText, nil
 }
 
+// ParseReceiptHandler processes and parses receipts
+func ParseReceiptHandler(w http.ResponseWriter, r *http.Request) {
+	type ParseRequest struct {
+		Receipt string `json:"receipt"`
+	}
+
+	var req ParseRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		helpers.JSONErrorResponse(w, http.StatusBadRequest, "Invalid input")
+		return
+	}
+
+	base64Image := req.Receipt
+	if strings.HasPrefix(base64Image, "data:image") {
+		base64Image = strings.Split(base64Image, ",")[1]
+	}
+
+	// Decode Base64 image
+	_, err := base64.StdEncoding.DecodeString(base64Image)
+	if err != nil {
+		helpers.JSONErrorResponse(w, http.StatusBadRequest, "Invalid Base64 image data")
+		return
+	}
+
+	// Extract text using Google Vision API
+	extractedText, err := callGoogleVisionAPI(base64Image)
+	if err != nil {
+		helpers.JSONErrorResponse(w, http.StatusBadRequest, "Error parsing Base64 data")
+		return
+	}
+
+	// Call OpenAI for parsing the extracted text
+	structuredData, err := callOpenAIForParsing(extractedText)
+	if err != nil {
+		helpers.JSONErrorResponse(w, http.StatusInternalServerError, "Failed to parse receipt with OpenAI API: "+err.Error())
+		return
+	}
+
+	// Respond with the structured data
+	helpers.JSONResponse(w, http.StatusOK, structuredData)
+}
+
 func CreateReceiptHandler(w http.ResponseWriter, r *http.Request) {
 	// Get the user ID from the context
 	userID, ok := auth.GetUserIDFromContext(r.Context())
 	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		helpers.JSONErrorResponse(w, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
 	// Decode request body into a generic receipt object
 	var receipt map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&receipt); err != nil {
-		http.Error(w, "Invalid input", http.StatusBadRequest)
+		helpers.JSONErrorResponse(w, http.StatusBadRequest, "Invalid input")
 		return
 	}
 
@@ -223,13 +225,13 @@ func CreateReceiptHandler(w http.ResponseWriter, r *http.Request) {
 	query := `INSERT INTO receipts (id, user_id, receipt_data, created_at) VALUES ($1, $2, $3, $4)`
 	receiptJSON, err := json.Marshal(receipt)
 	if err != nil {
-		http.Error(w, "Failed to serialize receipt", http.StatusInternalServerError)
+		helpers.JSONErrorResponse(w, http.StatusInternalServerError, "Failed to serialize receipt")
 		return
 	}
 
 	_, err = db.DB.Exec(query, receiptID, userID, receiptJSON, createdAt)
 	if err != nil {
-		http.Error(w, "Failed to store receipt", http.StatusInternalServerError)
+		helpers.JSONErrorResponse(w, http.StatusInternalServerError, "Failed to store receipt")
 		return
 	}
 
@@ -241,22 +243,21 @@ func CreateReceiptHandler(w http.ResponseWriter, r *http.Request) {
 		"created_at": createdAt,
 	}
 
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(response)
+	helpers.JSONResponse(w, http.StatusCreated, response)
 }
 
 func GetAllReceiptsHandler(w http.ResponseWriter, r *http.Request) {
 	// Get user ID from the context
 	userID, ok := auth.GetUserIDFromContext(r.Context())
 	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		helpers.JSONErrorResponse(w, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
 	// Query all receipts for the user
 	rows, err := db.DB.Query(`SELECT id, receipt_data, created_at FROM receipts WHERE user_id = $1`, userID)
 	if err != nil {
-		http.Error(w, "Failed to fetch receipts", http.StatusInternalServerError)
+		helpers.JSONErrorResponse(w, http.StatusInternalServerError, "Failed to fetch receipts")
 		return
 	}
 	defer rows.Close()
@@ -269,7 +270,7 @@ func GetAllReceiptsHandler(w http.ResponseWriter, r *http.Request) {
 
 		err := rows.Scan(&id, &receiptData, &createdAt)
 		if err != nil {
-			http.Error(w, "Failed to parse receipt data", http.StatusInternalServerError)
+			helpers.JSONErrorResponse(w, http.StatusInternalServerError, "Failed to parse receipt data")
 			return
 		}
 
@@ -277,7 +278,7 @@ func GetAllReceiptsHandler(w http.ResponseWriter, r *http.Request) {
 		var receipt map[string]interface{}
 		err = json.Unmarshal(receiptData, &receipt)
 		if err != nil {
-			http.Error(w, "Failed to decode receipt JSON", http.StatusInternalServerError)
+			helpers.JSONErrorResponse(w, http.StatusInternalServerError, "Failed to decode receipt JSON")
 			return
 		}
 
@@ -288,8 +289,7 @@ func GetAllReceiptsHandler(w http.ResponseWriter, r *http.Request) {
 		receipts = append(receipts, receipt)
 	}
 
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(receipts)
+	helpers.JSONResponse(w, http.StatusOK, receipts)
 }
 
 func GetReceiptByIDHandler(w http.ResponseWriter, r *http.Request) {
@@ -303,9 +303,9 @@ func GetReceiptByIDHandler(w http.ResponseWriter, r *http.Request) {
 	err := db.DB.QueryRow(query, id).Scan(&receiptData, &createdAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			http.Error(w, "Receipt not found", http.StatusNotFound)
+			helpers.JSONErrorResponse(w, http.StatusNotFound, "Receipt not found")
 		} else {
-			http.Error(w, "Failed to retrieve receipt", http.StatusInternalServerError)
+			helpers.JSONErrorResponse(w, http.StatusInternalServerError, "Failed to retrieve receipt")
 		}
 		return
 	}
@@ -314,7 +314,7 @@ func GetReceiptByIDHandler(w http.ResponseWriter, r *http.Request) {
 	var receipt map[string]interface{}
 	err = json.Unmarshal(receiptData, &receipt)
 	if err != nil {
-		http.Error(w, "Failed to decode receipt JSON", http.StatusInternalServerError)
+		helpers.JSONErrorResponse(w, http.StatusInternalServerError, "Failed to decode receipt JSON")
 		return
 	}
 
@@ -322,6 +322,5 @@ func GetReceiptByIDHandler(w http.ResponseWriter, r *http.Request) {
 	receipt["id"] = id
 	receipt["created_at"] = createdAt
 
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(receipt)
+	helpers.JSONResponse(w, http.StatusOK, receipt)
 }

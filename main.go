@@ -26,7 +26,9 @@ func main() {
 
 	// Auth routes
 	r.HandleFunc("/health", handlers.HealthCheckHandler).Methods("GET")
-	r.Handle("/health-auth", auth.JWTMiddleware(http.HandlerFunc(handlers.HealthCheckAuthHandler))).Methods("GET")
+
+	// User routes
+	r.Handle("/me", auth.JWTMiddleware(http.HandlerFunc(handlers.GetCurrentUser))).Methods("GET")
 
 	// Receipt routes (protected)
 	r.Handle("/receipts", auth.JWTMiddleware(http.HandlerFunc(handlers.CreateReceiptHandler))).Methods("POST")

@@ -8,6 +8,7 @@ import (
 
 	"receipt-splitter-backend/auth"
 	"receipt-splitter-backend/db"
+	"receipt-splitter-backend/helpers"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -34,20 +35,20 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Decode the request body
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, "Invalid input", http.StatusBadRequest)
+		helpers.JSONErrorResponse(w, http.StatusBadRequest, "Invalid input")
 		return
 	}
 
 	// Validate input fields
 	if input.Name == "" || input.Email == "" || input.Password == "" {
-		http.Error(w, "Name, email, and password are required", http.StatusBadRequest)
+		helpers.JSONErrorResponse(w, http.StatusBadRequest, "Name, email, and password are required")
 		return
 	}
 
 	// Hash the password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
 	if err != nil {
-		http.Error(w, "Error hashing password", http.StatusInternalServerError)
+		helpers.JSONErrorResponse(w, http.StatusInternalServerError, "Error hashing password")
 		return
 	}
 
@@ -64,10 +65,10 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	err = db.DB.QueryRow(query, user.Name, user.Email, user.Password, user.MonzoID).Scan(&user.ID, &user.CreatedAt)
 	if err != nil {
 		if err.Error() == "pq: duplicate key value violates unique constraint" {
-			http.Error(w, "Email already exists", http.StatusConflict)
+			helpers.JSONErrorResponse(w, http.StatusConflict, "Email already exists")
 			return
 		}
-		http.Error(w, "Failed to create user", http.StatusInternalServerError)
+		helpers.JSONErrorResponse(w, http.StatusInternalServerError, "Failed to create user")
 		return
 	}
 
@@ -75,10 +76,10 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	user.Password = ""
 
 	// Return the created user
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(user)
+	helpers.JSONResponse(w, http.StatusCreated, user)
 }
 
+// LoginHandler handles user login
 func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	var credentials struct {
 		Email    string `json:"email"`
@@ -87,13 +88,13 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Decode request
 	if err := json.NewDecoder(r.Body).Decode(&credentials); err != nil {
-		http.Error(w, "Invalid input", http.StatusBadRequest)
+		helpers.JSONErrorResponse(w, http.StatusBadRequest, "Invalid input")
 		return
 	}
 
 	// Validate input
 	if credentials.Email == "" || credentials.Password == "" {
-		http.Error(w, "Email and password are required", http.StatusBadRequest)
+		helpers.JSONErrorResponse(w, http.StatusBadRequest, "Email and password are required")
 		return
 	}
 
@@ -103,23 +104,23 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	err := db.DB.QueryRow(query, credentials.Email).Scan(&user.ID, &user.Name, &user.Email, &user.Password, &user.MonzoID, &user.CreatedAt)
 
 	if err == sql.ErrNoRows {
-		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
+		helpers.JSONErrorResponse(w, http.StatusUnauthorized, "Invalid email or password")
 		return
 	} else if err != nil {
-		http.Error(w, "Failed to query user", http.StatusInternalServerError)
+		helpers.JSONErrorResponse(w, http.StatusInternalServerError, "Failed to query user")
 		return
 	}
 
 	// Verify password
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(credentials.Password)); err != nil {
-		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
+		helpers.JSONErrorResponse(w, http.StatusUnauthorized, "Invalid email or password")
 		return
 	}
 
 	// Generate JWT
 	token, err := auth.GenerateJWT(user.ID)
 	if err != nil {
-		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
+		helpers.JSONErrorResponse(w, http.StatusInternalServerError, "Failed to generate token")
 		return
 	}
 
@@ -127,8 +128,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	user.Password = ""
 
 	// Respond with user info and token
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	helpers.JSONResponse(w, http.StatusOK, map[string]interface{}{
 		"user":  user,
 		"token": token,
 	})
