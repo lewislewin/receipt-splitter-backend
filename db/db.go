@@ -31,7 +31,7 @@ func InitDB() {
 	log.Println("Connected to database")
 
 	// Run migrations
-	err = DB.AutoMigrate(&models.User{}, &models.Receipt{})
+	err = DB.AutoMigrate(&models.User{}, &models.ReceiptItem{}, &models.Modifier{}, &models.Receipt{})
 	if err != nil {
 		log.Fatalf("Failed to migrate database: %v", err)
 	}

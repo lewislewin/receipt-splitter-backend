@@ -10,7 +10,7 @@ import (
 func GenerateJWT(userID string) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id": userID,
-		"exp":     time.Now().Add(time.Hour * 24).Unix(), // Token valid for 24 hours
+		"exp":     time.Now().Add(time.Hour * 24 * 28).Unix(), // Token valid for 24 hours
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	secret := os.Getenv("JWT_SECRET")
