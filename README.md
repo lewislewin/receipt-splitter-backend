@@ -1,10 +1,3 @@
----
-title: "Receipt Splitter"
-date: "2025-02-04"
-description: "AI-powered receipt splitting"
-github: "https://github.com/lewislewin/receipt-splitter"
----
-
 # Receipt Splitter
 
 ## What is it?
